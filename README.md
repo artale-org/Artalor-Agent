@@ -2,7 +2,7 @@
 
 # 🎬 Artalor - AI-Powered Video Creation Platform
 
-### Transform Product Images into Professional Video with AI Agent
+### Create Professional Video with AI Agent
 
 </div>
 
