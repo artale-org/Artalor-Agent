@@ -8,7 +8,7 @@
 
 <hr/>
 
-**Artalor** is an open-source, full-stack AI-powered platform that automatically generates professional consumer video from product images. Built with agentic workflows and modern web technologies, it's a **complete multi-modal creation tool** that handles every aspect of long video production across all modalities.
+**Artalor** is an open-source, full-stack AI-powered platform that automatically generates professional consumer videos. Built with agentic workflows and modern web technologies, it's a **complete multi-modal creation tool** that handles every aspect of long video production across all modalities.
 
 Upload a product image, and watch as AI generates:
 - 📝 **Story Scripts** - Compelling narratives with timed segments
