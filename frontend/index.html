@@ -1,0 +1,280 @@
+<!--
+-----------------------------------------------------------------------------
+© 2026 Artalor
+Artalor Project — All rights reserved.
+Licensed for personal and educational use only.
+Commercial use or redistribution prohibited.
+See LICENSE.md for full terms.
+-----------------------------------------------------------------------------
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Artalor - AI Video Creation</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="auth.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+</head>
+<body class="home-page">
+    <div id="particles-js"></div>
+    
+    <!-- User Navigation Bar -->
+    <nav class="user-nav">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <i class="fas fa-video"></i>
+                <span>Artalor</span>
+                <span class="nav-tagline">Professional AI Agent for Video Showcase</span>
+            </div>
+            
+            <!-- API Keys Button -->
+            <div class="auth-buttons">
+                <button id="api-keys-btn" class="btn-secondary">
+                    <i class="fas fa-key"></i> API Keys
+                </button>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="main-container">
+        <div class="header">
+            <h2>Hi friend,</h2>
+            <p>What are we creating today?</p>
+        </div>
+
+        <!-- Workflow Type Toggle -->
+        <div class="workflow-toggle">
+            <button type="button" class="workflow-tab active" data-workflow="ad">
+                <i class="fas fa-bullhorn"></i> Ads Video
+            </button>
+            <button type="button" class="workflow-tab" data-workflow="story">
+                <i class="fas fa-book-open"></i> Story Video
+            </button>
+        </div>
+
+        <!-- Ad Creation Form -->
+        <form id="ad-form">
+            <div class="input-area">
+                <textarea id="requirement" name="requirement" required>Create an advertisement video for this [product name]</textarea>
+                <div class="input-hint">Upload one product image and optionally mention the product name</div>
+                <div class="input-actions">
+                    <div class="icons">
+                        <label for="product_image" class="icon-label" data-tooltip="Upload product image">
+                            <svg id="upload-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        </label>
+                        <input type="file" id="product_image" name="product_image" accept="image/*" hidden>
+                        <span id="file-name"></span>
+                    </div>
+                    <button type="submit" id="generate-btn">Generate</button>
+                </div>
+            </div>
+
+            <!-- Model Selection Section -->
+            <div class="models-section">
+                <div class="model-selector">
+                    <label for="target-duration">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        Target Duration
+                    </label>
+                    <select id="target-duration" name="target_duration" class="model-dropdown">
+                        <option value="30" selected>Short (~30s)</option>
+                        <option value="60">Medium (30-60s)</option>
+                        <option value="90">Long (60-120s)</option>
+                    </select>
+                </div>
+                
+                <div class="model-selector">
+                    <label for="image-model">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        Image Model
+                    </label>
+                    <select id="image-model" name="image_model" class="model-dropdown">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+
+                <div class="model-selector">
+                    <label for="video-model">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        Video Model
+                    </label>
+                    <select id="video-model" name="video_model" class="model-dropdown">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+
+                <div class="model-selector">
+                    <label for="audio-model">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                        Audio Model
+                    </label>
+                    <select id="audio-model" name="audio_model" class="model-dropdown">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+            </div>
+        </form>
+
+        <!-- Story Video Form (hidden by default) -->
+        <form id="story-form" style="display: none;">
+            <div class="input-area">
+                <textarea id="story-text" name="story" placeholder="Write or paste your story here..." required></textarea>
+                <div class="input-hint">Artalor will transform it into a cinematic video with characters, scenes, and visual effects</div>
+                <div class="input-actions">
+                    <div class="icons">
+                        <label for="story-file-upload" class="icon-label" data-tooltip="Upload story text file">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        </label>
+                        <input type="file" id="story-file-upload" accept=".txt,.md" hidden>
+                        <label for="character-image-upload" class="icon-label" data-tooltip="Upload character image (optional)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        </label>
+                        <input type="file" id="character-image-upload" accept="image/*" hidden>
+                        <span id="story-file-name"></span>
+                    </div>
+                    <button type="submit" id="generate-story-btn">Generate</button>
+                </div>
+            </div>
+
+            <!-- Model Selection Section (Story) -->
+            <div class="models-section">
+                <div class="model-selector">
+                    <label for="story-target-duration">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        Target Duration
+                    </label>
+                    <select id="story-target-duration" name="target_duration" class="model-dropdown">
+                        <option value="30" selected>Short (~30s)</option>
+                        <option value="60">Medium (30-60s)</option>
+                        <option value="90">Long (60-120s)</option>
+                    </select>
+                </div>
+
+                <div class="model-selector">
+                    <label for="story-image-model">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        Image Model
+                    </label>
+                    <select id="story-image-model" name="image_model" class="model-dropdown">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+
+                <div class="model-selector">
+                    <label for="story-video-model">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                        Video Model
+                    </label>
+                    <select id="story-video-model" name="video_model" class="model-dropdown">
+                        <option value="">Loading...</option>
+                    </select>
+                </div>
+            </div>
+        </form>
+
+        <div id="status"></div>
+        <div id="result"></div>
+    </div>
+
+    <!-- Showcase Section - Separate Block -->
+    <div id="showcase-section" class="projects-section-block" style="display: none;">
+        <div class="section-header showcase-header">
+            <div class="showcase-content">
+                <div class="showcase-badge">
+                    <i class="fas fa-crown"></i>
+                    <span class="showcase-sparkle">✨</span>
+                </div>
+                <div class="showcase-text">
+                    <h3>Showcase</h3>
+                    <p class="showcase-subtitle">Explore our premium examples</p>
+                </div>
+            </div>
+        </div>
+        <div id="showcase-grid" class="projects-grid"></div>
+    </div>
+
+    <!-- Previous Projects Section - Separate Block -->
+    <div id="projects-section" class="projects-section-block" style="display: none;">
+        <div class="section-header">
+            <h3><i class="fas fa-folder-open"></i> Previous Projects</h3>
+        </div>
+        <div id="projects-grid" class="projects-grid"></div>
+    </div>
+
+    <!-- API Keys Settings Modal -->
+    <div id="api-keys-modal" class="auth-modal">
+        <div class="auth-modal-content">
+            <button class="auth-modal-close">&times;</button>
+            <div class="auth-modal-header">
+                <h2><i class="fas fa-key"></i> API Keys</h2>
+                <p>Configure your own API keys for generation</p>
+            </div>
+            
+            <div class="api-keys-info">
+                <p><i class="fas fa-info-circle"></i> Your API keys are stored locally in your browser and sent securely to the server only when generating content.</p>
+            </div>
+            
+            <form id="api-keys-form">
+                <div class="form-group">
+                    <label for="openai-api-key">
+                        <i class="fas fa-brain"></i> 
+                        <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" class="api-link" title="Get your OpenAI API key">
+                            OpenAI API Key
+                        </a>
+                    </label>
+                    <div class="api-key-input-wrapper">
+                        <input type="password" id="openai-api-key" placeholder="sk-proj-..." autocomplete="off">
+                        <button type="button" class="toggle-visibility" data-target="openai-api-key">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <small>Required for AI planning and some image generation models</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="replicate-api-token">
+                        <i class="fas fa-cogs"></i> 
+                        <a href="https://replicate.com/account/api-tokens" target="_blank" class="api-link" title="Get your Replicate API token">
+                            Replicate API Token
+                        </a>
+                    </label>
+                    <div class="api-key-input-wrapper">
+                        <input type="password" id="replicate-api-token" placeholder="r8_..." autocomplete="off">
+                        <button type="button" class="toggle-visibility" data-target="replicate-api-token">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </div>
+                    <small>Required for video generation and some image models</small>
+                </div>
+                
+                <div id="api-keys-status" class="api-keys-status"></div>
+                
+                <div class="api-keys-actions">
+                    <button type="button" id="clear-api-keys" class="btn-secondary">
+                        <i class="fas fa-trash"></i> Clear All
+                    </button>
+                    <button type="submit" class="auth-submit-btn">
+                        <i class="fas fa-save"></i> Save Keys
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <div class="footer-content">
+            <p class="footer-copyright">© 2026 Artalor. All rights reserved.</p>
+            <p class="footer-contact">Contact: <a href="mailto:support@artale.site">support@artale.site</a></p>
+        </div>
+    </footer>
+
+    <script src="auth.js"></script>
+    <script src="script.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

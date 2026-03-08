@@ -1,0 +1,78 @@
+{
+  "description": "Workflow configuration template - optional at runtime",
+  "version": "2.0",
+  "image_generation": {
+    "model": "google/nano-banana-pro",
+    "parameters": {
+      "aspect_ratio": "16:9",
+      "output_format": "jpg"
+    }
+  },
+  "video_generation": {
+    "model": "lucataco/wan-2.2-first-last-frame:003fd8a38ff17cb6022c3117bb90f7403cb632062ba2b098710738d116847d57",
+    "parameters": {}
+  },
+  "tts": {
+    "model": "minimax/speech-02-hd",
+    "parameters": {
+      "bitrate": 128000,
+      "channel": "mono",
+      "emotion": "auto",
+      "english_normalization": false,
+      "language_boost": "None",
+      "pitch": 0,
+      "sample_rate": 32000,
+      "speed": 1,
+      "voice_id": "Wise_Woman",
+      "volume": 1
+    }
+  },
+  "bgm": {
+    "model": "meta/musicgen:671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb",
+    "parameters": {
+      "classifier_free_guidance": 3,
+      "continuation": false,
+      "continuation_start": 0,
+      "duration": 20,
+      "model_version": "stereo-melody-large",
+      "multi_band_diffusion": false,
+      "normalization_strategy": "loudness",
+      "output_format": "wav",
+      "temperature": 1,
+      "top_k": 250,
+      "top_p": 0
+    }
+  },
+  "video_editor": {
+    "tool": "VideoEditNode",
+    "parameters": {
+      "video_volume": 0.35,
+      "video_volumes": null,
+      "narration_volume": 0.60,
+      "bgm_volume": 0.90,
+      "normalize": true,
+      "fade_duration": 0.5
+    },
+    "notes": {
+      "video_volume": "Global video volume (used if video_volumes is not set)",
+      "video_volumes": "Per-segment video volumes array (e.g. [0.2, 0.5, 0.3, 0.4]). If set, overrides video_volume."
+    }
+  },
+  "audio_processor": {
+    "tool": "SegmentedVoiceoverNode",
+    "parameters": {
+      "volume": 1.0,
+      "normalize": false
+    }
+  },
+  "global_settings": {
+    "use_seed_for_reproducibility": false,
+    "global_seed": null,
+    "max_retries": 3
+  },
+  "notes": {
+    "usage": "Copy this file and modify parameters, then pass via --config parameter when running workflow",
+    "example": "python ad_creation_workflow_langgraph.py --config my_config.json --requirement '...' --image '...'",
+    "optional": "If no configuration file is provided, all parameters will use default values"
+  }
+}

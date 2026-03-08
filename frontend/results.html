@@ -1,0 +1,210 @@
+<!--
+-----------------------------------------------------------------------------
+© 2026 Artalor
+Artalor Project — All rights reserved.
+Licensed for personal and educational use only.
+Commercial use or redistribution prohibited.
+See LICENSE.md for full terms.
+-----------------------------------------------------------------------------
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workspace</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body class="workspace-page">
+    <!-- Top Header -->
+    <header class="workspace-header">
+        <div class="header-left">
+            <h1>Workspace</h1>
+            <span class="project-status" id="project-status">Loading...</span>
+        </div>
+        <div class="header-right">
+            <button class="btn-secondary" onclick="window.location.href='index.html'">
+                <i class="fas fa-home"></i> Home
+            </button>
+            <button class="btn-primary" id="export-btn">
+                <i class="fas fa-download"></i> Export
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <div class="workspace-container">
+        <!-- Left Panel - Assets -->
+        <div class="assets-panel">
+            <div class="panel-header">
+                <h3><i class="fas fa-folder-open"></i> Assets</h3>
+                <div class="panel-controls">
+                    <button class="btn-icon" id="refresh-assets" title="Refresh">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button class="btn-icon" id="upload-asset" title="Upload">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="btn-icon" id="delete-asset" title="Delete Selected Asset">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="assets-content">
+                <!-- Workflow Status Indicator -->
+                <div class="workflow-status-bar" id="workflow-status-bar" style="display: none;">
+                    <div class="status-content">
+                        <div class="status-icon">
+                            <i class="fas fa-spinner"></i>
+                        </div>
+                        <div class="status-text">
+                            <span class="status-label">Processing</span>
+                            <span class="status-detail">Generating assets...</span>
+                        </div>
+                    </div>
+                    <div class="status-progress-bar">
+                        <div class="progress-marquee"></div>
+                    </div>
+                </div>
+                <div id="loader" class="loader" style="display: none;"></div>
+                <div class="asset-categories" id="asset-categories-container">
+                    <!-- Categories will be dynamically rendered here -->
+                </div>
+            </div>
+            <div class="assets-footer" style="padding: 15px; border-top: 1px solid #333; background: #1a1a1a;">
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                    <button class="btn-stop" id="stop-btn" disabled style="flex: 1;">
+                        <i class="fas fa-stop"></i> Stop
+                    </button>
+                    <button class="btn-continue" id="continue-btn" disabled style="flex: 1;">
+                        <i class="fas fa-play"></i> Continue
+                    </button>
+                </div>
+                <button class="btn-rerun" id="rerun-btn" disabled style="width: 100%; margin-top: 0;">
+                    <i class="fas fa-redo"></i> Rerun
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Panel - Editor -->
+        <div class="editor-panel">
+            <div class="panel-header">
+                <h3><i class="fas fa-edit"></i> Editor</h3>
+                <div class="panel-controls">
+                    <button class="btn-icon" id="fullscreen-preview" title="Fullscreen">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                    <button class="btn-icon" id="preview-settings" title="Settings">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Editor Content Container -->
+            <div class="editor-content-container">
+                <!-- Main Editor Area (Left) -->
+                <div class="editor-main-area">
+                    <!-- Preview Window -->
+                    <div class="preview-window">
+                        <div class="preview-container" id="preview-container">
+                            <div class="preview-placeholder">
+                                <i class="fas fa-play-circle"></i>
+                                <p>Select an asset to preview</p>
+                            </div>
+                        </div>
+                        <div class="preview-controls">
+                            <button class="btn-icon" id="play-pause">
+                                <i class="fas fa-play"></i>
+                            </button>
+                            <div class="timeline">
+                                <input type="range" id="timeline-slider" min="0" max="100" value="0">
+                            </div>
+                            <span class="time-display" id="time-display">00:00 / 00:00</span>
+                        </div>
+                    </div>
+
+                    <!-- Data Version Management -->
+                    <div class="version-management-section" id="version-management-section">
+                        <div class="command-header">
+                            <h4><i class="fas fa-code-branch"></i> Data Version Management</h4>
+                        </div>
+                        <div class="version-content" style="padding: 15px;">
+                            <label style="display:block; margin-bottom:10px; color:#4b5563; font-weight:500;">Historical Versions</label>
+                            
+                            <!-- Versions Grid Container -->
+                            <div id="version-grid" class="version-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; margin-bottom: 15px;">
+                                <div class="version-placeholder" style="grid-column: 1 / -1; text-align: center; color: #9ca3af; padding: 10px; font-style: italic;">
+                                    Select an asset to view versions
+                                </div>
+                            </div>
+
+                            <div class="version-actions" style="display: flex; gap: 10px; align-items: center; border-top: 1px solid #e5e7eb; padding-top: 15px;">
+                                <button id="apply-version-btn" class="btn-primary" disabled style="display: flex; align-items: center; gap: 6px;">
+                                    <i class="fas fa-check"></i> Apply Selected Version
+                                </button>
+                                <span id="version-status" style="font-size: 0.9em; color: #6b7280;"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Text Preview Panel (Right) -->
+                <div class="text-preview-panel" id="text-preview-panel" style="display: none;">
+                    <!-- Elastic middle: Asset Details + handle + Workflow Config -->
+                    <div class="panel-body-container" id="panel-body-container">
+                        <!-- Asset Details Header (collapsible) -->
+                        <div class="panel-section-header" id="asset-details-header" title="Click to collapse/expand">
+                            <h4><i class="fas fa-sliders-h"></i> Asset Details</h4>
+                            <div class="panel-section-header-actions">
+                                <i class="fas fa-chevron-up section-toggle-icon" id="asset-details-toggle"></i>
+                                <button class="btn-icon" id="close-text-preview" title="Close">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Asset Details Body -->
+                        <div class="text-preview-content" id="text-preview-content">
+                            <p class="text-preview-placeholder">Select an asset to view details</p>
+                        </div>
+                        
+                        <!-- Resize Handle -->
+                        <div class="panel-resize-handle" id="panel-resize-handle" style="display: none;" title="Drag to resize">
+                            <div class="resize-handle-grip"></div>
+                        </div>
+                        
+                        <!-- Workflow Config Panel (collapsible) -->
+                        <div class="workflow-config-panel" id="workflow-config-panel" style="display: none;">
+                            <div class="panel-section-header" id="workflow-config-toggle-header" title="Click to collapse/expand">
+                                <h4><i class="fas fa-cog"></i> Workflow Config</h4>
+                                <i class="fas fa-chevron-up section-toggle-icon" id="workflow-config-toggle"></i>
+                            </div>
+                            <div class="workflow-config-content" id="workflow-config-content">
+                                <!-- Config parameters will be dynamically loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Fixed footer - always at bottom, never affected by resize -->
+                    <div class="text-preview-footer">
+                        <button class="btn-regenerate" id="regenerate-btn" disabled>
+                            <i class="fas fa-sync-alt"></i> Generate New Version
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Modal -->
+    <div id="fullscreen-modal" class="modal">
+        <span class="close-btn">&times;</span>
+        <div class="modal-content" id="modal-content"></div>
+    </div>
+
+    <!-- Hidden file input for uploads -->
+    <input type="file" id="file-upload" multiple accept="image/*,video/*,audio/*" style="display: none;">
+
+    <script src="results.js"></script>
+</body>
+</html>

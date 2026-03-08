@@ -1,0 +1,21 @@
+{
+  "image": [
+    "fal-ai/flux-1.1-pro",
+    "fal-ai/flux-dev",
+    "fal-ai/lcm-sd15"
+  ],
+  "video": [
+    "fal-ai/animate-diff",
+    "fal-ai/sky-replicate-i2v"
+  ],
+  "tts": [
+    "fal-ai/minimax-speech-01",
+    "fal-ai/xtts-v2"
+  ],
+  "bgm": [
+    "fal-ai/stable-audio",
+    "meta/musicgen"
+  ]
+}
+
+

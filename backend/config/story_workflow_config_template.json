@@ -1,0 +1,37 @@
+{
+  "description": "Story Video Workflow configuration template - optional at runtime",
+  "version": "1.0",
+  "image_generation": {
+    "model": "google/nano-banana-pro",
+    "parameters": {
+      "aspect_ratio": "16:9",
+      "output_format": "png"
+    }
+  },
+  "video_generation": {
+    "model": "lucataco/wan-2.2-first-last-frame:003fd8a38ff17cb6022c3117bb90f7403cb632062ba2b098710738d116847d57",
+    "parameters": {
+      "duration": 8
+    }
+  },
+  "video_editor": {
+    "tool": "VideoEditNode",
+    "parameters": {
+      "video_volume": 1.0,
+      "normalize": true,
+      "fade_duration": 0.5
+    }
+  },
+  "global_settings": {
+    "use_seed_for_reproducibility": false,
+    "global_seed": null,
+    "max_retries": 3,
+    "target_duration": 60
+  },
+  "notes": {
+    "usage": "Copy this file and modify parameters, then pass via --config parameter when running workflow",
+    "example": "python story_video_workflow_langgraph.py --config my_config.json --story 'Once upon a time...' --task-path task_data/my_story",
+    "optional": "If no configuration file is provided, all parameters will use default values",
+    "duration_calculation": "target_duration (60s) ÷ video clip duration (8s) = ~7-8 clips. Adjust target_duration to control total video length."
+  }
+}

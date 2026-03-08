@@ -1,0 +1,216 @@
+{
+  "description": "Tool configuration definitions - universal tool configuration, task-independent",
+  "version": "1.0",
+  "tools": {
+    "video_editor": {
+      "VideoEditNode": {
+        "description": "Video compositing tool - merge video, audio and BGM",
+        "input_keys": {
+          "generated_videos": {
+            "type": "list[string]",
+            "required": true,
+            "description": "Generated video file path list"
+          },
+          "segmented_voiceover_paths": {
+            "type": "list[string]",
+            "required": false,
+            "description": "Segmented voiceover audio path list corresponding to each video"
+          },
+          "segmented_voiceover_generation": {
+            "type": "dict",
+            "required": false,
+            "description": "Segmented voiceover generation result (alternative to segmented_voiceover_paths)"
+          },
+          "bgm_path": {
+            "type": "string",
+            "required": false,
+            "description": "Background music file path"
+          },
+          "bgm_generation": {
+            "type": "dict",
+            "required": false,
+            "description": "BGM generation result (alternative to bgm_path)"
+          }
+        },
+        "parameters": {
+          "video_volume": {
+            "type": "float",
+            "default": 0.35,
+            "range": [0.0, 2.0],
+            "description": "Original video audio volume"
+          },
+          "narration_volume": {
+            "type": "float",
+            "default": 0.60,
+            "range": [0.0, 2.0],
+            "description": "Narration audio volume"
+          },
+          "bgm_volume": {
+            "type": "float",
+            "default": 0.90,
+            "range": [0.0, 2.0],
+            "description": "Background music volume"
+          },
+          "normalize": {
+            "type": "boolean",
+            "default": true,
+            "description": "Normalize all audio tracks"
+          },
+          "fade_duration": {
+            "type": "float",
+            "default": 0.5,
+            "range": [0.0, 5.0],
+            "description": "Fade in/out duration (seconds)"
+          }
+        }
+      }
+    },
+    "audio_processor": {
+      "VoiceoverNode": {
+        "description": "Voice processing tool - adjust voice parameters",
+        "input_keys": {
+          "audio_path": {
+            "type": "string",
+            "required": true,
+            "description": "Audio file path"
+          }
+        },
+        "parameters": {
+          "volume": {
+            "type": "float",
+            "default": 1.0,
+            "range": [0.0, 2.0],
+            "description": "Volume multiplier"
+          },
+          "normalize": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to normalize audio"
+          }
+        }
+      },
+      "SegmentedVoiceoverNode": {
+        "description": "Segmented voice processing tool - process multiple voice segments",
+        "input_keys": {
+          "segments": {
+            "type": "list[dict]",
+            "required": true,
+            "description": "Segmented text list"
+          }
+        },
+        "parameters": {
+          "volume": {
+            "type": "float",
+            "default": 1.0,
+            "range": [0.0, 2.0],
+            "description": "Volume multiplier"
+          },
+          "normalize": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to normalize audio"
+          }
+        }
+      },
+      "BGMNode": {
+        "description": "Background music processing tool",
+        "input_keys": {
+          "bgm_path": {
+            "type": "string",
+            "required": false,
+            "description": "BGM file path (if already exists)"
+          },
+          "target_duration": {
+            "type": "float",
+            "required": true,
+            "description": "Target duration (seconds)"
+          }
+        },
+        "parameters": {
+          "volume": {
+            "type": "float",
+            "default": 0.7,
+            "range": [0.0, 1.0],
+            "description": "BGM volume"
+          },
+          "loop": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether to loop playback to match duration"
+          },
+          "fade_in": {
+            "type": "float",
+            "default": 1.0,
+            "range": [0.0, 5.0],
+            "description": "Fade in duration (seconds)"
+          },
+          "fade_out": {
+            "type": "float",
+            "default": 1.0,
+            "range": [0.0, 5.0],
+            "description": "Fade out duration (seconds)"
+          }
+        }
+      }
+    },
+    "image_processor": {
+      "ImageNode": {
+        "description": "Image processing tool - adjust image parameters",
+        "input_keys": {
+          "image_path": {
+            "type": "string",
+            "required": true,
+            "description": "Image file path"
+          }
+        },
+        "parameters": {
+          "resize": {
+            "type": "tuple[int, int]",
+            "default": null,
+            "description": "Resize image dimensions (width, height)"
+          },
+          "crop": {
+            "type": "tuple[int, int, int, int]",
+            "default": null,
+            "description": "Crop image (x, y, width, height)"
+          }
+        }
+      }
+    },
+    "video_processor": {
+      "VideoNode": {
+        "description": "Video processing tool - adjust video parameters",
+        "input_keys": {
+          "video_path": {
+            "type": "string",
+            "required": true,
+            "description": "Video file path"
+          }
+        },
+        "parameters": {
+          "resize": {
+            "type": "tuple[int, int]",
+            "default": null,
+            "description": "Resize video dimensions (width, height)"
+          },
+          "fps": {
+            "type": "integer",
+            "default": null,
+            "description": "Adjust frame rate"
+          },
+          "trim": {
+            "type": "tuple[float, float]",
+            "default": null,
+            "description": "Trim video duration (start_time, end_time)"
+          }
+        }
+      }
+    }
+  },
+  "notes": {
+    "purpose": "Define input keys and parameters for all tools",
+    "location": "tools/ directory (universal configuration, task-independent)",
+    "usage": "Workflow loads this configuration at runtime to understand input/output interface of each tool",
+    "extension": "Can extend this configuration based on actual tools used"
+  }
+}
