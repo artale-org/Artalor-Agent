@@ -59,6 +59,9 @@ import sqlite3
 import json
 from typing import TypedDict, Annotated, Any, Optional, List
 from pydantic import BaseModel, Field
+import numpy as np
+from moviepy import AudioFileClip, VideoFileClip, concatenate_audioclips
+from moviepy.audio.AudioClip import AudioArrayClip
 
 # LangGraph
 from langgraph.graph import StateGraph, START, END
@@ -71,6 +74,7 @@ sys.path.insert(0, arch_root)
 
 # Data Version Manager
 from modules.utils.data_version_manager import DataVersionManager
+from modules.tools.audio_gen import replicate_tts
 
 # Import infrastructure layer
 infra_base = __import__('modules.nodes.base_node', fromlist=['BaseNode'])
@@ -87,16 +91,152 @@ VideoEditNode = infra_audio.VideoEditNode
 biz_story = __import__('domain_components.analysis.story_analyzer', fromlist=['StoryAnalyzer'])
 biz_storyboard = __import__('domain_components.generation.storyboard_designer', fromlist=['StoryboardDesigner'])
 biz_story_monologue = __import__('domain_components.generation.story_monologue_designer', fromlist=['StoryMonologueDesigner'])
+biz_story_segmented_monologue = __import__('domain_components.generation.story_segmented_monologue_designer', fromlist=['StorySegmentedMonologueDesigner'])
 
 StoryAnalyzer = biz_story.StoryAnalyzer
 StoryboardDesigner = biz_storyboard.StoryboardDesigner
 StoryMonologueDesigner = biz_story_monologue.StoryMonologueDesigner
+StorySegmentedMonologueDesigner = biz_story_segmented_monologue.StorySegmentedMonologueDesigner
 
 
 # Reducer function: replace old value with new value
 def replace_value(left: Any, right: Any) -> Any:
     """Replace old value with new value, unless new value is None"""
     return right if right is not None else left
+
+
+def _measure_audio_duration(path: str) -> Optional[float]:
+    if not path or not os.path.exists(path):
+        return None
+    clip = None
+    try:
+        clip = AudioFileClip(path)
+        return float(clip.duration) if clip.duration is not None else None
+    except Exception:
+        return None
+    finally:
+        if clip is not None:
+            clip.close()
+
+
+def _measure_video_duration(path: str) -> Optional[float]:
+    if not path or not os.path.exists(path):
+        return None
+    clip = None
+    try:
+        clip = VideoFileClip(path)
+        return float(clip.duration) if clip.duration is not None else None
+    except Exception:
+        return None
+    finally:
+        if clip is not None:
+            clip.close()
+
+
+def _load_story_video_paths_and_durations(task_path: str, state: dict) -> tuple[list[str], list[Optional[float]]]:
+    videos = []
+    durations = []
+
+    state_videos = state.get('generated_videos') or []
+    if isinstance(state_videos, list):
+        for path in state_videos:
+            if isinstance(path, str) and os.path.exists(path):
+                videos.append(path)
+                durations.append(_measure_video_duration(path))
+
+    if videos:
+        return videos, durations
+
+    try:
+        dvm = DataVersionManager(task_path)
+        for i in range(100):
+            sub_video_dir = os.path.join(task_path, f'sub_video_{i}')
+            if not os.path.exists(sub_video_dir):
+                break
+            path = dvm.get_current_version([f'sub_video_{i}', 'video'])
+            if isinstance(path, str) and os.path.exists(path):
+                videos.append(path)
+                durations.append(_measure_video_duration(path))
+    except Exception as e:
+        print(f"⚠️ [story_tts] Failed to load story video durations: {e}")
+
+    return videos, durations
+
+
+def _get_latest_story_segment_voiceover(task_path: str, idx: int) -> Optional[str]:
+    sub_video_dir = os.path.join(task_path, f'sub_video_{idx}')
+    if not os.path.exists(sub_video_dir):
+        return None
+
+    candidates = []
+    for filename in os.listdir(sub_video_dir):
+        if not filename.startswith('voiceover') or not filename.endswith('.mp3'):
+            continue
+        version = 0
+        if '_v' in filename:
+            try:
+                version = int(filename.rsplit('_v', 1)[1].split('.', 1)[0])
+            except Exception:
+                version = 0
+        candidates.append((version, os.path.join(sub_video_dir, filename)))
+
+    if not candidates:
+        plain_path = os.path.join(sub_video_dir, 'voiceover.mp3')
+        return plain_path if os.path.exists(plain_path) else None
+
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return os.path.abspath(candidates[0][1])
+
+
+def _concatenate_audio_segments(
+    segment_paths: list[str],
+    output_path: str,
+    slot_durations: Optional[list[Optional[float]]] = None,
+) -> Optional[float]:
+    valid_paths = [path for path in segment_paths if isinstance(path, str) and os.path.exists(path)]
+    if not valid_paths:
+        return None
+
+    clips = []
+    merged_clip = None
+    try:
+        for i, path in enumerate(valid_paths):
+            clip = AudioFileClip(path)
+            target_duration = None
+            if isinstance(slot_durations, list) and i < len(slot_durations):
+                try:
+                    raw_duration = slot_durations[i]
+                    if raw_duration is not None:
+                        target_duration = float(raw_duration)
+                except Exception:
+                    target_duration = None
+
+            if target_duration and target_duration > 0:
+                if clip.duration > target_duration:
+                    clip = clip.subclipped(0, target_duration)
+                elif clip.duration < target_duration:
+                    fps = getattr(clip, 'fps', 44100)
+                    clip_arr = clip.to_soundarray(fps=fps)
+                    channels = clip_arr.shape[1] if clip_arr.ndim == 2 else 1
+                    silence_samples = int(max(target_duration - clip.duration, 0) * fps)
+                    silence_arr = np.zeros((silence_samples, max(1, channels)), dtype=np.float32)
+                    padded_arr = np.concatenate([clip_arr, silence_arr], axis=0)
+                    padded_clip = AudioArrayClip(padded_arr, fps=fps).with_duration(target_duration)
+                    try:
+                        clip.close()
+                    except Exception:
+                        pass
+                    clip = padded_clip
+
+            clips.append(clip)
+        merged_clip = concatenate_audioclips(clips)
+        merged_clip.write_audiofile(output_path, logger=None)
+        return float(merged_clip.duration) if merged_clip.duration is not None else None
+    finally:
+        if merged_clip is not None:
+            merged_clip.close()
+        for clip in clips:
+            clip.close()
 
 
 # Define WorkflowState schema for LangGraph
@@ -399,6 +539,7 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
     image_generator = ImageNode('image_generation', task_path)
     video_generator = VideoNode('video_generation', task_path)
     story_monologue_designer = StoryMonologueDesigner.create_node('story_tts_text', task_path)
+    story_segmented_monologue_designer = StorySegmentedMonologueDesigner.create_node('story_segmented_tts_text', task_path)
     voiceover_generator = VoiceoverNode('tts', task_path)
     video_editor = VideoEditNode('video_editing', task_path)
     
@@ -434,6 +575,81 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
     voiceover_generator.configure(default_model=tts_config.get('model', 'minimax/speech-02-hd'), voice=tts_config.get('parameters', {}).get('voice_id'))
 
     # Node wrappers for LangGraph
+    def _generate_story_segment_voiceovers(
+        segments: list,
+        tts_overrides: dict,
+        create_new_version: bool,
+        force_execute: bool = False,
+    ) -> tuple[list[str], list[Optional[float]], dict]:
+        segment_paths = []
+        segment_durations = []
+        effective_params = {}
+
+        original_create_new_version = voiceover_generator._create_new_version
+        voiceover_generator._create_new_version = create_new_version
+        try:
+            for i, segment in enumerate(segments):
+                if hasattr(segment, 'model_dump'):
+                    segment = segment.model_dump()
+
+                segment_text = (segment or {}).get('segment_text', '').strip()
+                if not segment_text:
+                    raise ValueError(f"Story segment {i + 1} has empty segment_text")
+
+                sub_video_dir = os.path.join(task_path, f'sub_video_{i}')
+                os.makedirs(sub_video_dir, exist_ok=True)
+                segment_path = voiceover_generator.prepare_output_path(os.path.join(sub_video_dir, 'voiceover.mp3'))
+
+                model_params = voiceover_generator.get_model_parameters(asset_path=segment_path, overrides=tts_overrides)
+                current_model = model_params.get('model', voiceover_generator.default_model)
+                voice = model_params.get('voice_id') or model_params.get('voice') or voiceover_generator.voice
+                tts_call_params = {
+                    k: v for k, v in model_params.items()
+                    if k not in {'model', 'text', 'voice'}
+                }
+
+                if not force_execute and not create_new_version:
+                    existing_path = _get_latest_story_segment_voiceover(task_path, i)
+                    if existing_path and os.path.exists(existing_path):
+                        existing_duration = _measure_audio_duration(existing_path)
+                        print(f"📄 [story_tts] Reusing cached story segment {i + 1}: {os.path.basename(existing_path)}")
+                        segment_paths.append(existing_path)
+                        segment_durations.append(existing_duration)
+                        effective_params = model_params
+                        continue
+
+                tmp_path = replicate_tts(
+                    text=segment_text,
+                    voice=voice,
+                    model=current_model,
+                    output_dir=sub_video_dir,
+                    **tts_call_params,
+                )
+                if not tmp_path or not os.path.exists(tmp_path):
+                    raise RuntimeError(f"Failed to generate story segment audio for segment {i + 1}")
+
+                os.replace(tmp_path, segment_path)
+                duration = _measure_audio_duration(segment_path)
+                metadata = {
+                    'model': current_model,
+                    'voice': voice,
+                    'voice_id': model_params.get('voice_id') or voice,
+                    'speed': model_params.get('speed'),
+                    'text': segment_text,
+                    'segment_index': i,
+                    'timing_notes': (segment or {}).get('timing_notes'),
+                    'duration': duration,
+                    **model_params,
+                }
+                voiceover_generator.save_asset_metadata(segment_path, metadata)
+                segment_paths.append(segment_path)
+                segment_durations.append(duration)
+                effective_params = model_params
+        finally:
+            voiceover_generator._create_new_version = original_create_new_version
+
+        return segment_paths, segment_durations, effective_params
+
     def node_story_analysis(state: dict, force_execute=False, create_new_version=False) -> dict:
         state_with_options = {**state, '_force_execute': force_execute, '_create_new_version': create_new_version}
         result = story_analyzer(state_with_options)
@@ -692,11 +908,79 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
             monologue_result = story_monologue_designer(state_with_options)
             updates = monologue_result.get('story_tts_text', monologue_result) if isinstance(monologue_result, dict) else {}
 
-        tts_inputs = state_with_options.copy()
-        tts_inputs.update(updates)
         tts_overrides = dict(tts_config.get('parameters', {}))
         if isinstance(runtime_tts_overrides, dict):
             tts_overrides.update(runtime_tts_overrides)
+
+        storyboard = state_with_options.get('storyboard') or state_with_options.get('storyboard_frames') or []
+        current_videos, video_durations = _load_story_video_paths_and_durations(task_path, state_with_options)
+        fallback_clip_duration = state_with_options.get('video_duration_per_clip') or 8.0
+
+        if storyboard:
+            normalized_language, language_instruction = StoryMonologueDesigner._normalize_language_preference(
+                state_with_options.get('narration_language_preference')
+            )
+            segment_inputs = state_with_options.copy()
+            segment_inputs.update(updates)
+            segment_inputs['storyboard'] = storyboard
+            segment_inputs['generated_videos'] = current_videos
+            segment_inputs['video_durations'] = video_durations or [fallback_clip_duration] * len(storyboard)
+            segment_inputs['narration_language_preference'] = normalized_language
+            segment_inputs['narration_language_instruction'] = language_instruction
+
+            segmented_result = story_segmented_monologue_designer(segment_inputs)
+            segmented_payload = segmented_result.get('story_segmented_tts_text', segmented_result) if isinstance(segmented_result, dict) else {}
+            segments = segmented_payload.get('segments', [])
+
+            if segments:
+                segment_paths, segment_durations, effective_params = _generate_story_segment_voiceovers(
+                    segments=segments,
+                    tts_overrides=tts_overrides,
+                    create_new_version=create_new_version,
+                    force_execute=force_execute,
+                )
+
+                original_create_new_version = voiceover_generator._create_new_version
+                voiceover_generator._create_new_version = create_new_version
+                try:
+                    voiceover_path = voiceover_generator.prepare_output_path(os.path.join(voiceover_generator.output_dir, 'voiceover.mp3'))
+                finally:
+                    voiceover_generator._create_new_version = original_create_new_version
+
+                merged_duration = _concatenate_audio_segments(
+                    segment_paths,
+                    voiceover_path,
+                    slot_durations=video_durations,
+                )
+                effective_voice = (
+                    effective_params.get('voice_id')
+                    or effective_params.get('voice')
+                    or voiceover_generator.voice
+                )
+                voiceover_generator.save_asset_metadata(voiceover_path, {
+                    'model': effective_params.get('model', voiceover_generator.default_model),
+                    'voice': effective_voice,
+                    'voice_id': effective_params.get('voice_id') or effective_voice,
+                    'speed': effective_params.get('speed'),
+                    'text': updates.get('monologue_text', state_with_options.get('monologue_text', '')),
+                    'language_boost': effective_params.get('language_boost'),
+                    'segment_count': len(segment_paths),
+                    'segment_paths': segment_paths,
+                    'segment_durations': segment_durations,
+                    'segment_slot_durations': video_durations,
+                    'duration': merged_duration,
+                    'source_mode': 'story_segmented_voiceover',
+                    **{
+                        k: v for k, v in effective_params.items()
+                        if k not in {'duration', 'segment_index', 'timing_notes', 'text'}
+                    },
+                })
+                voiceover_generator.update_data_version(['voiceover'], voiceover_path)
+                updates['voiceover_path'] = voiceover_path
+                return updates
+
+        tts_inputs = state_with_options.copy()
+        tts_inputs.update(updates)
         if tts_overrides:
             tts_inputs['tts'] = tts_overrides
 
