@@ -48,14 +48,44 @@ class AudioScript(BaseModel):
     segments: List[AudioSegment]
 
 
-def replicate_tts(text: str, voice: str = None, model: str = "lucataco/xtts", output_dir: str = "audios", speed: float = None) -> str:
+def replicate_tts(
+    text: str,
+    voice: str = None,
+    model: str = "lucataco/xtts",
+    output_dir: str = "audios",
+    speed: float = None,
+    **kwargs,
+) -> str:
     """Generate TTS via Replicate model and return local file path."""
-    inputs = { "text": text }
-    if voice:
+    inputs = {"text": text}
+
+    # Prefer explicit voice_id when available; fall back to generic voice for other models.
+    if kwargs.get("voice_id"):
+        inputs["voice_id"] = kwargs["voice_id"]
+    elif voice:
         inputs["voice"] = voice
+
     if speed is not None:
-        # Many TTS models accept a generic 'speed' parameter; safe to pass when supported
         inputs["speed"] = speed
+
+    # Pass through model-specific TTS parameters when provided.
+    passthrough_keys = {
+        "audio_format",
+        "bitrate",
+        "channel",
+        "emotion",
+        "english_normalization",
+        "language_boost",
+        "pitch",
+        "sample_rate",
+        "subtitle_enable",
+        "voice_id",
+        "volume",
+    }
+    for key in passthrough_keys:
+        if key in kwargs and kwargs[key] is not None:
+            inputs[key] = kwargs[key]
+
     prediction = replicate.predictions.create(model, input=inputs)
     while prediction.status in ("starting", "processing"):
         prediction = replicate.predictions.get(prediction.id)

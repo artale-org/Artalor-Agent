@@ -2059,7 +2059,7 @@ document.addEventListener('DOMContentLoaded', () => {
         configHTML += `
             <div class="config-param">
                 <label class="config-param-label">Model</label>
-                <select class="config-model-select" data-node="${nodeType}">
+                <select class="config-model-select" data-node="${nodeType}" data-original-value="${currentModelBaseName || ''}">
                     ${Object.keys(availableModels).map(modelKey => `
                         <option value="${modelKey}" ${modelKey === currentModelBaseName ? 'selected' : ''}>
                             ${modelKey.split('/').pop()}
@@ -2106,7 +2106,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     configHTML += `
                         <div class="config-param">
                             <label class="config-param-label">${formatParamLabel(paramKey)}</label>
-                            <select class="config-param-select" data-param="${paramKey}">
+                            <select class="config-param-select" data-param="${paramKey}" data-value-type="${paramDef.type || 'string'}" data-original-value="${currentValue ?? ''}">
                                 ${paramDef.options.map(option => `
                                     <option value="${option}" ${option === currentValue ? 'selected' : ''}>
                                         ${option}
@@ -2121,7 +2121,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     configHTML += `
                         <div class="config-param">
                             <label class="config-param-label">${formatParamLabel(paramKey)}</label>
-                            <input type="number" class="config-param-input" data-param="${paramKey}" 
+                            <input type="number" class="config-param-input" data-param="${paramKey}" data-value-type="${paramDef.type}" data-original-value="${currentValue}" 
                                    value="${currentValue}" step="${step}">
                         </div>
                     `;
@@ -2130,10 +2130,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     configHTML += `
                         <div class="config-param">
                             <label class="config-param-label">${formatParamLabel(paramKey)}</label>
-                            <select class="config-param-select" data-param="${paramKey}">
+                            <select class="config-param-select" data-param="${paramKey}" data-value-type="boolean" data-original-value="${currentValue === true ? 'true' : 'false'}">
                                 <option value="true" ${currentValue === true ? 'selected' : ''}>true</option>
                                 <option value="false" ${currentValue === false ? 'selected' : ''}>false</option>
                             </select>
+                        </div>
+                    `;
+                } else if (paramDef.type === 'string') {
+                    // Text input for free-form string parameters like voice_id
+                    configHTML += `
+                        <div class="config-param">
+                            <label class="config-param-label">${formatParamLabel(paramKey)}</label>
+                            <input type="text" class="config-param-input" data-param="${paramKey}" data-value-type="string" data-original-value="${currentValue ?? ''}" 
+                                   value="${currentValue ?? ''}">
                         </div>
                     `;
                 }
@@ -2492,6 +2501,58 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('✅ Rerun button enabled due to config changes');
         }
     }
+
+    function getControlValue(control) {
+        const valueType = control.dataset.valueType || 'string';
+        const rawValue = control.value;
+
+        if (valueType === 'boolean') {
+            return rawValue === 'true';
+        }
+        if (valueType === 'number' || valueType === 'integer') {
+            return rawValue === '' ? '' : parseFloat(rawValue);
+        }
+        return rawValue;
+    }
+
+    function getOriginalControlValue(control) {
+        const valueType = control.dataset.valueType || 'string';
+        const rawValue = control.dataset.originalValue ?? '';
+
+        if (valueType === 'boolean') {
+            return rawValue === 'true';
+        }
+        if (valueType === 'number' || valueType === 'integer') {
+            return rawValue === '' ? '' : parseFloat(rawValue);
+        }
+        return rawValue;
+    }
+
+    function collectVisibleConfigChanges() {
+        const changes = {};
+
+        const modelSelect = workflowConfigContent.querySelector('.config-model-select');
+        if (modelSelect) {
+            const originalModel = modelSelect.dataset.originalValue || '';
+            if (modelSelect.value !== originalModel) {
+                changes.model = modelSelect.value;
+            }
+        }
+
+        const controls = workflowConfigContent.querySelectorAll('.config-param-select, .config-param-input');
+        controls.forEach(control => {
+            const paramKey = control.dataset.param;
+            if (!paramKey) return;
+
+            const currentValue = getControlValue(control);
+            const originalValue = getOriginalControlValue(control);
+            if (!Object.is(currentValue, originalValue)) {
+                changes[paramKey] = currentValue;
+            }
+        });
+
+        return changes;
+    }
     
     // Update workflow config on server
     async function updateWorkflowConfig(nodeType, paramKey, newValue) {
@@ -2581,6 +2642,14 @@ document.addEventListener('DOMContentLoaded', () => {
             regenerateBtn.disabled = true;
             regenerateBtn.classList.add('active');
             
+            // Re-read the visible config controls at click time in case
+            // the pending in-memory map was reset by a panel refresh.
+            const visibleConfigChanges = collectVisibleConfigChanges();
+            if (Object.keys(visibleConfigChanges).length > 0) {
+                pendingConfigChanges = { ...pendingConfigChanges, ...visibleConfigChanges };
+                console.log('🧮 Reconstructed config changes from visible controls:', visibleConfigChanges);
+            }
+
             // Save pending config changes to JSON file if any
             if (Object.keys(pendingConfigChanges).length > 0 && currentAssetConfigPath) {
                 console.log('💾 Saving pending config changes:', pendingConfigChanges);

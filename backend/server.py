@@ -1498,6 +1498,7 @@ def regenerate_asset(task_id):
         task_path = os.path.join(app.config['UPLOAD_FOLDER'], task_id)
         if not os.path.exists(task_path):
             return jsonify({'error': 'Task not found'}), 404
+        full_file_path = os.path.join(app.config['UPLOAD_FOLDER'], file_path)
         
         # Detect workflow type and import the correct module
         wf_type = detect_workflow_type(task_id)
@@ -1553,6 +1554,21 @@ def regenerate_asset(task_id):
                 # Story workflow full-track voiceover:
                 # - if user edited the text, synthesize from that exact text
                 # - otherwise regenerate narration text from story context first
+                asset_json_path = os.path.splitext(full_file_path)[0] + '.json'
+                if os.path.exists(asset_json_path):
+                    try:
+                        with open(asset_json_path, 'r', encoding='utf-8') as f:
+                            asset_config = json.load(f)
+                        tts_overrides = {
+                            k: v for k, v in asset_config.items()
+                            if k not in {'text'}
+                        }
+                        if tts_overrides:
+                            field_updates['tts'] = tts_overrides
+                            print(f"🎛️ Loaded story voiceover asset config overrides from {os.path.basename(asset_json_path)}")
+                    except Exception as e:
+                        print(f"⚠️ Failed to load story voiceover asset config: {e}")
+
                 if text_edited and edited_text and edited_text.strip():
                     field_updates['monologue_text'] = edited_text.strip()
                     field_updates['_use_existing_monologue_text'] = True
@@ -2273,6 +2289,13 @@ def update_workflow_config(task_id):
     }
     """
     try:
+        def _sync_voice_fields(config_dict, param_key, param_value):
+            """Keep voice and voice_id aligned for TTS configs."""
+            if param_key not in {'voice', 'voice_id'}:
+                return
+            config_dict['voice'] = param_value
+            config_dict['voice_id'] = param_value
+
         data = request.get_json()
         if not data or 'node' not in data or 'parameter' not in data or 'value' not in data:
             return jsonify({'error': 'Missing required fields: node, parameter, value'}), 400
@@ -2305,6 +2328,7 @@ def update_workflow_config(task_id):
                 config[node]['parameters'] = {}
 
             config[node]['parameters'][parameter] = value
+            _sync_voice_fields(config[node]['parameters'], parameter, value)
             print(f"✅ Updated workflow config: {node}.parameters.{parameter} = {value}")
 
         # Save updated config
@@ -2329,6 +2353,13 @@ def update_asset_config(task_id):
     Update configuration for a specific asset.
     """
     try:
+        def _sync_voice_fields(config_dict, param_key, param_value):
+            """Keep voice and voice_id aligned for TTS asset metadata."""
+            if param_key not in {'voice', 'voice_id'}:
+                return
+            config_dict['voice'] = param_value
+            config_dict['voice_id'] = param_value
+
         data = request.get_json()
         if not data or 'file_path' not in data or 'parameter' not in data or 'value' not in data:
             return jsonify({'error': 'Missing required fields'}), 400
@@ -2360,6 +2391,7 @@ def update_asset_config(task_id):
 
         # Update value (flat structure)
         config[parameter] = value
+        _sync_voice_fields(config, parameter, value)
 
         with open(json_path, 'w') as f:
             json.dump(config, f, indent=2)

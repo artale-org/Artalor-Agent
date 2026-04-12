@@ -66,25 +66,36 @@ class VoiceoverNode(GenModelNode):
             print(f"🎤 [VoiceoverNode] Text: {voice_text[:100]}...")
             
             # Extract voice if provided in params
-            voice = model_params.get('voice') or model_params.get('voice_id') or self.voice
+            voice = model_params.get('voice_id') or model_params.get('voice') or self.voice
             speed = model_params.get('speed')
+            print(
+                f"🎛️ [VoiceoverNode] Effective TTS params: "
+                f"voice_id={model_params.get('voice_id') or voice}, "
+                f"language_boost={model_params.get('language_boost')}, "
+                f"emotion={model_params.get('emotion')}"
+            )
             
             # Save config BEFORE generation so it exists even if generation fails
             metadata_to_save = {
                 'model': current_model,
                 'voice': voice,
+                'voice_id': model_params.get('voice_id') or voice,
                 'speed': speed,
                 'text': voice_text.strip(),
                 **model_params
             }
             self.save_asset_metadata(voiceover_path, metadata_to_save)
+            tts_call_params = {
+                k: v for k, v in model_params.items()
+                if k not in {'model', 'text', 'voice'}
+            }
             
             result_path = replicate_tts(
                 text=voice_text.strip(),
                 voice=voice,
                 model=current_model,
                 output_dir=self.output_dir,
-                speed=speed
+                **tts_call_params,
             )
             
             # Rename to consistent filename for caching

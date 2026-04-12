@@ -1055,7 +1055,26 @@
           "voice_id": {
             "type": "string",
             "description": "Voice to synthesize. Pick any MiniMax system voice or a voice_id returned by https://replicate.com/minimax/voice-cloning.",
-            "default": "Wise_Woman"
+            "default": "Wise_Woman",
+            "options": [
+              "Wise_Woman",
+              "Friendly_Person",
+              "Inspirational_girl",
+              "Deep_Voice_Man",
+              "Calm_Woman",
+              "Casual_Guy",
+              "Lively_Girl",
+              "Patient_Man",
+              "Young_Knight",
+              "Determined_Man",
+              "Lovely_Girl",
+              "Decent_Boy",
+              "Imposing_Manner",
+              "Elegant_Man",
+              "Abbess",
+              "Sweet_Girl_2",
+              "Exuberant_Girl"
+            ]
           },
           "volume": {
             "type": "number",
@@ -1220,7 +1239,26 @@
           "voice_id": {
             "type": "string",
             "description": "Voice to synthesize. Pick any MiniMax system voice or a voice_id returned by https://replicate.com/minimax/voice-cloning.",
-            "default": "Wise_Woman"
+            "default": "Wise_Woman",
+            "options": [
+              "Wise_Woman",
+              "Friendly_Person",
+              "Inspirational_girl",
+              "Deep_Voice_Man",
+              "Calm_Woman",
+              "Casual_Guy",
+              "Lively_Girl",
+              "Patient_Man",
+              "Young_Knight",
+              "Determined_Man",
+              "Lovely_Girl",
+              "Decent_Boy",
+              "Imposing_Manner",
+              "Elegant_Man",
+              "Abbess",
+              "Sweet_Girl_2",
+              "Exuberant_Girl"
+            ]
           },
           "volume": {
             "type": "number",

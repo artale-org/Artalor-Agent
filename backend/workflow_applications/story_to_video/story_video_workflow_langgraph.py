@@ -136,11 +136,13 @@ class WorkflowState(TypedDict, total=False):
     voice_style: Annotated[str, replace_value]
     pacing: Annotated[str, replace_value]
     language: Annotated[str, replace_value]
+    tts: Annotated[dict, replace_value]  # Runtime TTS overrides for story voiceover regeneration
     voiceover_path: Annotated[str, replace_value]
     final_video: Annotated[str, replace_value]  # Final edited video path
     
     # Control flow state
     _dirty_flags: Annotated[dict, replace_value]  # Track which fields have been modified
+    _use_existing_monologue_text: Annotated[bool, replace_value]  # Force TTS to reuse user-edited narration text
 
 
 # ============================================================================
@@ -672,6 +674,11 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
 
     def node_story_tts(state: dict, force_execute=False, create_new_version=False) -> dict:
         state_with_options = {**state, '_force_execute': force_execute, '_create_new_version': create_new_version}
+        runtime_tts_overrides = state_with_options.get('tts', {})
+        if isinstance(runtime_tts_overrides, dict):
+            preferred_language = runtime_tts_overrides.get('language_boost')
+            if preferred_language and preferred_language not in {'None', 'Automatic'}:
+                state_with_options['narration_language_preference'] = preferred_language
         if state_with_options.get('_use_existing_monologue_text') and state_with_options.get('monologue_text'):
             updates = {
                 'monologue_text': state_with_options.get('monologue_text'),
@@ -688,6 +695,8 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
         tts_inputs = state_with_options.copy()
         tts_inputs.update(updates)
         tts_overrides = dict(tts_config.get('parameters', {}))
+        if isinstance(runtime_tts_overrides, dict):
+            tts_overrides.update(runtime_tts_overrides)
         if tts_overrides:
             tts_inputs['tts'] = tts_overrides
 

@@ -29,6 +29,8 @@ Story context:
 - Setting: {setting}
 - Visual style: {visual_style}
 - Target duration: {target_duration} seconds
+- Preferred narration language: {narration_language_preference}
+- Language instruction: {narration_language_instruction}
 - Spoken length target: {spoken_length_guidance}
 - Approximate word target: {word_budget_guidance}
 - Sentence guidance: {sentence_guidance}
@@ -45,6 +47,8 @@ Write a narration that:
 6) Fills most of the requested runtime instead of reading like a short trailer tag.
 7) Uses enough detail to match the target duration while still sounding natural.
 8) Does not pad with repetition, filler, or generic conclusions.
+9) If a preferred narration language is provided, write the monologue_text fully in that language and set the language field accordingly.
+10) Never default back to English when a non-English narration language is requested.
 
 Provide:
 - language
@@ -66,6 +70,7 @@ class StoryMonologueDesigner:
         'visual_style': ['visual_style', 'visual_style_suggestion'],
         'scene_descriptions': ['scene_descriptions', 'scene', 'scenes'],
         'target_duration': ['target_duration'],
+        'narration_language_preference': ['narration_language_preference'],
     }
 
     OUTPUT_MAPPING = {
@@ -95,6 +100,34 @@ class StoryMonologueDesigner:
         word_budget_guidance = f"Target roughly {min_words} to {max_words} words."
         sentence_guidance = f"Usually {min_sentences} to {max_sentences} sentences, depending on pacing and complexity."
         return spoken_length_guidance, word_budget_guidance, sentence_guidance
+
+    @staticmethod
+    def _normalize_language_preference(language_preference: Optional[str]) -> tuple[str, str]:
+        """Map TTS language selection to a strong narration-language instruction."""
+        if not language_preference or language_preference in {"Not provided", "None", "Automatic"}:
+            return "Not provided", "Use the most natural language for the story context."
+
+        normalized = str(language_preference).strip()
+        mapping = {
+            "English": ("English", "Write the monologue fully in English. Set language to en or English."),
+            "Chinese": ("Simplified Chinese", "Write the monologue fully in Simplified Chinese. Do not use English except unavoidable proper nouns. Set language to zh or Chinese."),
+            "Chinese,Yue": ("Cantonese Chinese", "Write the monologue fully in Cantonese Chinese. Prefer Traditional Chinese characters and natural Cantonese phrasing. Do not write standard Mandarin prose."),
+            "Cantonese": ("Cantonese Chinese", "Write the monologue fully in Cantonese Chinese. Prefer Traditional Chinese characters and natural Cantonese phrasing."),
+            "Japanese": ("Japanese", "Write the monologue fully in Japanese. Set language to ja or Japanese."),
+            "Korean": ("Korean", "Write the monologue fully in Korean. Set language to ko or Korean."),
+            "French": ("French", "Write the monologue fully in French."),
+            "Spanish": ("Spanish", "Write the monologue fully in Spanish."),
+            "Portuguese": ("Portuguese", "Write the monologue fully in Portuguese."),
+            "German": ("German", "Write the monologue fully in German."),
+            "Italian": ("Italian", "Write the monologue fully in Italian."),
+            "Russian": ("Russian", "Write the monologue fully in Russian."),
+            "Arabic": ("Arabic", "Write the monologue fully in Arabic."),
+            "Vietnamese": ("Vietnamese", "Write the monologue fully in Vietnamese."),
+            "Indonesian": ("Indonesian", "Write the monologue fully in Indonesian."),
+            "Thai": ("Thai", "Write the monologue fully in Thai."),
+            "Hindi": ("Hindi", "Write the monologue fully in Hindi."),
+        }
+        return mapping.get(normalized, (normalized, f"Write the monologue fully in {normalized}."))
 
     @classmethod
     def create_node(cls, name: str, task_path: str, **config) -> ChatNode:
@@ -126,6 +159,15 @@ class StoryMonologueDesigner:
             if mapped_inputs.get('target_duration') is None:
                 mapped_inputs['target_duration'] = 60
 
+            if mapped_inputs.get('narration_language_preference') in (None, "", "None", "Automatic"):
+                mapped_inputs['narration_language_preference'] = "Not provided"
+
+            normalized_language, language_instruction = cls._normalize_language_preference(
+                mapped_inputs.get('narration_language_preference')
+            )
+            mapped_inputs['narration_language_preference'] = normalized_language
+            mapped_inputs['narration_language_instruction'] = language_instruction
+
             spoken_length_guidance, word_budget_guidance, sentence_guidance = cls._estimate_word_budget(
                 mapped_inputs.get('target_duration')
             )
@@ -139,6 +181,40 @@ class StoryMonologueDesigner:
 
             result = (node.prompt_template | node.chat_model.with_structured_output(node.output_structure)).invoke(mapped_inputs)
             data = result.model_dump() if hasattr(result, 'model_dump') else result
+
+            preferred_language = mapped_inputs.get('narration_language_preference')
+            if preferred_language and preferred_language not in {"Not provided", "English"} and data.get('monologue_text'):
+                translation_prompt = ChatPromptTemplate.from_template("""
+You are a professional story narrator localizing a voiceover script.
+
+Target language: {target_language}
+Instruction: {language_instruction}
+
+Current voice style: {voice_style}
+Current pacing: {pacing}
+
+Rewrite the following narration fully in the target language.
+- Keep the meaning, cinematic tone, pacing, and approximate spoken length.
+- Do not summarize it further.
+- Do not leave the output in English.
+- Return only the rewritten narration text.
+
+Narration:
+{monologue_text}
+""")
+                translated = node.chat_model.invoke(
+                    translation_prompt.format_messages(
+                        target_language=preferred_language,
+                        language_instruction=mapped_inputs['narration_language_instruction'],
+                        voice_style=data.get('voice_style', 'cinematic'),
+                        pacing=data.get('pacing', 'measured'),
+                        monologue_text=data['monologue_text'],
+                    )
+                )
+                translated_text = getattr(translated, 'content', None)
+                if translated_text:
+                    data['monologue_text'] = translated_text.strip()
+                    data['language'] = preferred_language
 
             for source_field, target_field in cls.OUTPUT_MAPPING.items():
                 if source_field in data:
