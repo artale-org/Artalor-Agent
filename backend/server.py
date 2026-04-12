@@ -1486,6 +1486,7 @@ def regenerate_asset(task_id):
         file_path = data.get('file')
         edited_text = data.get('edited_text')
         file_type = data.get('file_type')
+        text_edited = bool(data.get('text_edited', False))
         
         if not file_path or not file_type:
             return jsonify({'error': 'Missing required fields: file, file_type'}), 400
@@ -1548,6 +1549,17 @@ def regenerate_asset(task_id):
                         print(f"⚠️  Failed to remove old BGM: {e}")
                 
                 node_to_execute = 'bgm'  # Will regenerate BGM
+            elif wf_type == 'story' and re.search(r'(^|/)audios/voiceover\.(mp3|wav|ogg|aac|flac|m4a)$', normalized_file_path):
+                # Story workflow full-track voiceover:
+                # - if user edited the text, synthesize from that exact text
+                # - otherwise regenerate narration text from story context first
+                if text_edited and edited_text and edited_text.strip():
+                    field_updates['monologue_text'] = edited_text.strip()
+                    field_updates['_use_existing_monologue_text'] = True
+                    print(f"📝 Regenerating full story voiceover from user-edited text ({len(edited_text.split())} words)")
+                else:
+                    print("📝 Regenerating full story narration and voiceover from story context")
+                node_to_execute = 'story_tts'
             # Audio file: segment_X.mp3 (old) or sub_video_X/voiceover.mp3 (new)
             # Use fine-grained regeneration: modify segment + delete old file
             else:
@@ -1807,26 +1819,31 @@ def regenerate_asset(task_id):
             # 确保关键 JSON 文件被同步，这样前端轮询到的就是最新不带脏标记的数据
             json_sync_map = {
                 'segmented_tts': ('segmented_monologue_design.json', 'segments'),
-                'bgm': ('product_analysis.json', 'product_analysis')
+                'bgm': ('product_analysis.json', 'product_analysis'),
+                'story_tts': ('story_tts_text.json', 'monologue_text')
             }
             
             if node_to_execute in json_sync_map:
                 json_filename, state_field = json_sync_map[node_to_execute]
                 json_path = os.path.join(task_path, json_filename)
-                if os.path.exists(json_path):
-                    try:
+                try:
+                    existing_data = {}
+                    if os.path.exists(json_path):
                         with open(json_path, 'r', encoding='utf-8') as f:
                             existing_data = json.load(f)
-                        
-                        # 更新对应字段
-                        if state_field in final_state.values:
-                            existing_data[state_field] = serialize_for_json(final_state.values[state_field])
-                        
-                        with open(json_path, 'w', encoding='utf-8') as f:
-                            json.dump(existing_data, f, ensure_ascii=False, indent=2)
-                        print(f"💾 Synchronized {state_field} to {json_filename}")
-                    except Exception as e:
-                        print(f"⚠️ Failed to sync {json_filename}: {e}")
+
+                    if node_to_execute == 'story_tts':
+                        for key in ['language', 'voice_style', 'pacing', 'monologue_text']:
+                            if key in final_state.values:
+                                existing_data[key] = serialize_for_json(final_state.values[key])
+                    elif state_field in final_state.values:
+                        existing_data[state_field] = serialize_for_json(final_state.values[state_field])
+
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(existing_data, f, ensure_ascii=False, indent=2)
+                    print(f"💾 Synchronized {state_field} to {json_filename}")
+                except Exception as e:
+                    print(f"⚠️ Failed to sync {json_filename}: {e}")
 
             # 3. 获取最新结构并返回
             # 注意：不要直接调用 get_results 视图函数，手动实现逻辑以避免上下文冲突

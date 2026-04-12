@@ -768,7 +768,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nodeType = 'bgm';
                 await showBGMTextPreview(resolvedFile);
             } else {
-                nodeType = 'segmented_tts';
+                nodeType = /\/audios\/voiceover/i.test(resolvedFile) ? 'story_tts' : 'segmented_tts';
                 await showAudioTextPreview(resolvedFile);
             }
         }
@@ -1512,6 +1512,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     async function showAudioTextPreview(audioFile) {
         const filename = getFileName(audioFile);
+        const isFullStoryVoiceover = /\/audios\/voiceover/i.test(audioFile);
         
         // Check if it's a BGM file
         if (filename.toLowerCase().includes('bgm')) {
@@ -1520,10 +1521,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         // 1. Load config first (for editable text)
-        const config = await loadAndShowConfig(audioFile, 'segmented_tts');
+        const config = await loadAndShowConfig(audioFile, isFullStoryVoiceover ? 'story_tts' : 'segmented_tts');
         let text = '';
         
-        if (config && config.segment_text) {
+        if (isFullStoryVoiceover && config && config.text) {
+            text = config.text;
+        } else if (isFullStoryVoiceover && config && config.monologue_text) {
+            text = config.monologue_text;
+        } else if (config && config.segment_text) {
             text = config.segment_text;
         } else {
             text = "No text available in asset config.";
@@ -1562,14 +1567,15 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="text-preview-segment">
                 <div class="text-preview-segment-label">${filename}</div>
                 <div class="text-preview-segment-text">${text}</div>
+                ${isFullStoryVoiceover ? '<div class="text-preview-segment-timing">If you edit this text, regenerate will use your edited narration. If you leave it unchanged, regenerate will automatically rewrite it to fit the story duration.</div>' : ''}
                 ${timingInfo}
             </div>
         `;
         
         currentEditableFile = audioFile;
         isTextEdited = false;
-        regenerateBtn.disabled = true;
-        regenerateBtn.classList.remove('active');
+        regenerateBtn.disabled = isFullStoryVoiceover ? false : true;
+        regenerateBtn.classList.toggle('active', isFullStoryVoiceover);
         regenerateBtn.style.display = ''; // Reset display
         textPreviewContent.style.display = ''; // Reset display
         textPreviewPanel.style.display = 'flex';
@@ -1889,6 +1895,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'image_generation': ['aspect_ratio', 'style', 'format'],
             'video_generation': ['aspect_ratio', 'duration', 'effect', 'style', 'resolution', 'motion', 'generate_audio', 'seconds'],
             'segmented_tts': ['bitrate', 'emotion', 'sample_rate', 'speed', 'voice', 'volume', 'channel', 'language'],
+            'story_tts': ['bitrate', 'emotion', 'sample_rate', 'speed', 'voice', 'volume', 'channel', 'language'],
             'bgm': ['duration', 'format', 'rate']
         };
         return filters[nodeType] || [];
@@ -1919,7 +1926,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Map nodeType to workflow_config.json key (some keys differ)
         const configKeyMap = {
             'edit': 'video_editor',
-            'segmented_tts': 'tts'
+            'segmented_tts': 'tts',
+            'story_tts': 'tts'
         };
         const configKey = configKeyMap[nodeType] || nodeType;
         const nodeConfig = workflowConfig[configKey];
@@ -2034,7 +2042,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Determine which model category to look in based on node type
         let modelCategory = nodeType;
-        if (nodeType === 'segmented_tts') {
+        if (nodeType === 'segmented_tts' || nodeType === 'story_tts') {
             modelCategory = 'tts';
         }
         // Note: 'bgm' node type maps directly to 'bgm' category in models_config.json
@@ -2493,7 +2501,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Map nodeType to workflow_config.json key
             const configKeyMap = {
                 'edit': 'video_editor',
-                'segmented_tts': 'tts'
+                'segmented_tts': 'tts',
+                'story_tts': 'tts'
             };
             const configNodeKey = configKeyMap[nodeType] || nodeType;
             
@@ -2613,7 +2622,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify({
                         file: currentEditableFile,
                         edited_text: editedText,
-                        file_type: fileType
+                        file_type: fileType,
+                        text_edited: isTextEdited
                     })
                 });
                 

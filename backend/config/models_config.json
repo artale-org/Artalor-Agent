@@ -573,7 +573,7 @@
           "duration": {
             "type": "integer",
             "description": "Video duration in seconds. Set to -1 for intelligent duration.",
-            "default": 5,
+            "default": 15,
             "range": [
               -1,
               15

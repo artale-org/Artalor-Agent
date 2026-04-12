@@ -13,7 +13,7 @@ class StoryMonologueSpec(BaseModel):
     language: str = Field(description="Language of the narration, e.g., en")
     voice_style: str = Field(description="Voice persona for the narration, e.g., warm, reflective, cinematic")
     pacing: str = Field(description="Reading pace guidance, e.g., slow, medium, measured")
-    monologue_text: str = Field(description="Short, production-ready narration text for the full video")
+    monologue_text: str = Field(description="Production-ready narration text sized to the target runtime of the full video")
 
 
 STORY_MONOLOGUE_TEMPLATE = ChatPromptTemplate.from_template("""
@@ -29,17 +29,22 @@ Story context:
 - Setting: {setting}
 - Visual style: {visual_style}
 - Target duration: {target_duration} seconds
+- Spoken length target: {spoken_length_guidance}
+- Approximate word target: {word_budget_guidance}
+- Sentence guidance: {sentence_guidance}
 
 Scene summaries:
 {scene_descriptions}
 
-Write a concise narration that:
+Write a narration that:
 1) Summarizes what the story is about.
 2) Reflects the emotional tone of the story.
 3) Frames the role of the final video as a visual retelling of the story.
 4) Sounds natural when spoken as one continuous voiceover track.
 5) Avoids literal scene-by-scene captioning.
-6) Stays concise: usually 2-4 short sentences, suitable for a short-form video.
+6) Fills most of the requested runtime instead of reading like a short trailer tag.
+7) Uses enough detail to match the target duration while still sounding natural.
+8) Does not pad with repetition, filler, or generic conclusions.
 
 Provide:
 - language
@@ -70,6 +75,27 @@ class StoryMonologueDesigner:
         'language': 'language',
     }
 
+    @staticmethod
+    def _estimate_word_budget(target_duration: int) -> tuple[str, str, str]:
+        """Return runtime guidance for a natural single-track narration."""
+        try:
+            duration = max(15, int(target_duration))
+        except (TypeError, ValueError):
+            duration = 60
+
+        # Rough voiceover planning guidance for a natural story narration.
+        target_words = max(35, int(duration * 2.2))
+        min_words = max(30, int(target_words * 0.9))
+        max_words = int(target_words * 1.1)
+
+        min_sentences = max(3, round(duration / 12))
+        max_sentences = max(min_sentences + 1, round(duration / 8))
+
+        spoken_length_guidance = f"Aim for about {max(8, duration - 5)} to {duration} seconds when spoken naturally."
+        word_budget_guidance = f"Target roughly {min_words} to {max_words} words."
+        sentence_guidance = f"Usually {min_sentences} to {max_sentences} sentences, depending on pacing and complexity."
+        return spoken_length_guidance, word_budget_guidance, sentence_guidance
+
     @classmethod
     def create_node(cls, name: str, task_path: str, **config) -> ChatNode:
         node = ChatNode(name, task_path)
@@ -99,6 +125,13 @@ class StoryMonologueDesigner:
 
             if mapped_inputs.get('target_duration') is None:
                 mapped_inputs['target_duration'] = 60
+
+            spoken_length_guidance, word_budget_guidance, sentence_guidance = cls._estimate_word_budget(
+                mapped_inputs.get('target_duration')
+            )
+            mapped_inputs['spoken_length_guidance'] = spoken_length_guidance
+            mapped_inputs['word_budget_guidance'] = word_budget_guidance
+            mapped_inputs['sentence_guidance'] = sentence_guidance
 
             for key, value in list(mapped_inputs.items()):
                 if value is None:

@@ -672,9 +672,18 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
 
     def node_story_tts(state: dict, force_execute=False, create_new_version=False) -> dict:
         state_with_options = {**state, '_force_execute': force_execute, '_create_new_version': create_new_version}
-
-        monologue_result = story_monologue_designer(state_with_options)
-        updates = monologue_result.get('story_tts_text', monologue_result) if isinstance(monologue_result, dict) else {}
+        if state_with_options.get('_use_existing_monologue_text') and state_with_options.get('monologue_text'):
+            updates = {
+                'monologue_text': state_with_options.get('monologue_text'),
+                'language': state_with_options.get('language'),
+                'voice_style': state_with_options.get('voice_style'),
+                'pacing': state_with_options.get('pacing'),
+            }
+            updates = {k: v for k, v in updates.items() if v is not None}
+            print("📝 [story_tts] Using existing monologue_text for voiceover regeneration")
+        else:
+            monologue_result = story_monologue_designer(state_with_options)
+            updates = monologue_result.get('story_tts_text', monologue_result) if isinstance(monologue_result, dict) else {}
 
         tts_inputs = state_with_options.copy()
         tts_inputs.update(updates)
@@ -774,6 +783,9 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
     
     # Attach node registry to app
     app._node_registry = node_registry
+    app._single_node_handlers = {
+        'story_tts': node_story_tts,
+    }
     app._task_path = task_path
     app._config_manager = config_manager
     
@@ -1144,6 +1156,7 @@ def execute_single_node(app, config, node_name: str, task_path: str = None, crea
         print(f"   Dependencies: {', '.join(depends_on)}")
     
     node_instance = getattr(app, '_node_registry', {}).get(node_name)
+    single_node_handler = getattr(app, '_single_node_handlers', {}).get(node_name)
     output_fields = []
     if node_instance and hasattr(node_instance, 'get_output_fields'):
         output_fields = node_instance.get_output_fields()
@@ -1193,27 +1206,40 @@ def execute_single_node(app, config, node_name: str, task_path: str = None, crea
     
     print(f"   🔄 Executing node function...")
     
-    if not node_instance:
+    if not node_instance and not single_node_handler:
         print(f"   ⚠️  Node instance not found for '{node_name}'")
         return state_values
     
     try:
-        # Call the node instance directly with current state
-        result = node_instance(state_values)
-        
-        # Extract the node's output using the actual instance name
-        result_key = getattr(node_instance, 'name', None) or node_name
-        if result_key in result:
-            node_output = result[result_key]
-            print(f"   ✅ Node executed successfully")
-            
-            # Update state with node output
+        if single_node_handler:
+            print(f"   🔁 Executing composite node handler for '{node_name}'")
+            node_output = single_node_handler(
+                state_values,
+                force_execute=state_values.get('_force_execute', False),
+                create_new_version=create_new_version,
+            )
+            print(f"   ✅ Composite node executed successfully")
             if isinstance(node_output, dict):
                 state_values.update(node_output)
             else:
-                state_values[result_key] = node_output
+                state_values[node_name] = node_output
         else:
-            print(f"   ⚠️  No output found in result for '{node_name}' (looked for key '{result_key}')")
+            # Call the node instance directly with current state
+            result = node_instance(state_values)
+            
+            # Extract the node's output using the actual instance name
+            result_key = getattr(node_instance, 'name', None) or node_name
+            if result_key in result:
+                node_output = result[result_key]
+                print(f"   ✅ Node executed successfully")
+                
+                # Update state with node output
+                if isinstance(node_output, dict):
+                    state_values.update(node_output)
+                else:
+                    state_values[result_key] = node_output
+            else:
+                print(f"   ⚠️  No output found in result for '{node_name}' (looked for key '{result_key}')")
     except Exception as e:
         print(f"   ❌ Node execution failed: {e}")
         import traceback
@@ -1228,6 +1254,7 @@ def execute_single_node(app, config, node_name: str, task_path: str = None, crea
         del dirty_flags['_force_execute']
     state_values.pop('_force_execute', None)
     state_values.pop('_create_new_version', None)
+    state_values.pop('_use_existing_monologue_text', None)
     
     # Clear dirty flags for this node's dependency fields (processed)
     if depends_on:
