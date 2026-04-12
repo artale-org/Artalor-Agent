@@ -9,6 +9,7 @@
 import requests
 import json
 import base64
+import mimetypes
 from modules.tools.utils import load_env, ProgressIndicator
 import os
 import time
@@ -76,6 +77,42 @@ def get_base64_data(file_path):
     with open(file_path, "rb") as image_file:
         data = base64.b64encode(image_file.read()).decode('utf-8')
     return data
+
+
+def _to_data_uri(file_path):
+    """Convert a local file path to a data URI, leave URLs/data URIs untouched."""
+    if not isinstance(file_path, str) or not file_path:
+        return file_path
+    if file_path.startswith(('data:', 'http://', 'https://')):
+        return file_path
+    if not os.path.exists(file_path):
+        return file_path
+
+    mime, _ = mimetypes.guess_type(file_path)
+    if not mime:
+        mime = 'application/octet-stream'
+
+    with open(file_path, "rb") as input_file:
+        data = base64.b64encode(input_file.read()).decode('utf-8')
+    return f"data:{mime};base64,{data}"
+
+
+def _serialize_local_file_inputs(inputs, input_keys):
+    """Convert local file paths in model inputs to data URIs based on schema."""
+    if not input_keys:
+        return inputs
+
+    serialized_inputs = dict(inputs)
+    for key, value in list(serialized_inputs.items()):
+        schema = input_keys.get(key, {})
+        schema_type = schema.get('type')
+
+        if schema_type == 'string' and isinstance(value, str):
+            serialized_inputs[key] = _to_data_uri(value)
+        elif schema_type in ('array', 'list[string]') and isinstance(value, (list, tuple)):
+            serialized_inputs[key] = [_to_data_uri(item) for item in value]
+
+    return serialized_inputs
 
 
 def _kling_video_gen(prompt, start_image_path, end_image_path, model='kling-v1-5'):
@@ -215,12 +252,12 @@ def _replicate_gen(prompt, start_image_path, end_image_path, model, **kwargs):
     # Inject images using the discovered keys
     if start_image_path and os.path.exists(start_image_path):
         if start_key:
-            inputs[start_key] = f"data:application/octet-stream;base64,{get_base64_data(start_image_path)}"
+            inputs[start_key] = _to_data_uri(start_image_path)
             # print(f"   Start image mapped to key: {start_key}")
 
     if end_image_path and os.path.exists(end_image_path):
         if end_key:
-            inputs[end_key] = f"data:application/octet-stream;base64,{get_base64_data(end_image_path)}"
+            inputs[end_key] = _to_data_uri(end_image_path)
             # print(f"   End image mapped to key: {end_key}")
         
     # Cleanup generic keys that might confuse the API
@@ -232,6 +269,8 @@ def _replicate_gen(prompt, start_image_path, end_image_path, model, **kwargs):
             # Only remove if it holds a path string (heuristic to avoid deleting valid params)
             if isinstance(val, str) and (val.endswith('.png') or val.endswith('.jpg') or '/' in val):
                  inputs.pop(generic, None)
+
+    inputs = _serialize_local_file_inputs(inputs, input_keys)
 
     prediction = replicate.predictions.create(
         model,
@@ -248,8 +287,21 @@ def _replicate_gen(prompt, start_image_path, end_image_path, model, **kwargs):
             return prediction.output
         elif prediction.status in ('starting', 'processing'):
             prediction = replicate.predictions.get(prediction.id)
+        elif prediction.status == 'failed':
+            print()
+            error_msg = getattr(prediction, 'error', None) or 'Unknown error'
+            print(f"❌ [video_gen] Prediction failed: {error_msg}")
+            if hasattr(prediction, 'logs') and prediction.logs:
+                print(f"📋 [video_gen] Logs: {prediction.logs[-500:]}")
+            return None
+        elif prediction.status == 'canceled':
+            print()
+            print(f"⚠️  [video_gen] Prediction was canceled")
+            return None
         else:
-            break
+            print()
+            print(f"⚠️  [video_gen] Unexpected status: {prediction.status}")
+            return None
 
 
 def _fal_extract_first_url(result) -> str:

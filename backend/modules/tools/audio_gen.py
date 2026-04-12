@@ -136,6 +136,7 @@ def _make_silence(duration_s: float, fps: int = 44100, channels: int = 2) -> Aud
 def mux_video_with_audio_segments(
     video_paths: list,
     narration_paths: list = None,
+    full_narration_path: str = None,
     bgm_path: str = None,
     output_path: str = None,
     *,
@@ -147,7 +148,7 @@ def mux_video_with_audio_segments(
     fade_duration: float = 0.5,
 ) -> str:
     """
-    Merge multiple video segments with corresponding narration segments and overall BGM.
+    Merge multiple video segments with either segmented narration or one full narration track, plus optional BGM.
     
     Audio Processing with Normalization:
     1. For each video segment:
@@ -155,7 +156,8 @@ def mux_video_with_audio_segments(
        - Add narration/TTS (normalized, scaled to narration_volume)
        - Mix both tracks together
     2. Concatenate all video segments
-    3. Add BGM to final video (normalized, scaled to bgm_volume)
+    3. Optionally add a full narration track to the concatenated video
+    4. Add BGM to final video (normalized, scaled to bgm_volume)
     
     Args:
         video_volumes: Optional list of per-segment video volumes. If provided, overrides video_volume.
@@ -272,6 +274,54 @@ def mux_video_with_audio_segments(
         final_video = video_segments[0]
     else:
         final_video = concatenate_videoclips(video_segments)
+
+    # Add one full narration track after concatenation, if provided.
+    if full_narration_path and not (isinstance(full_narration_path, str) and full_narration_path.startswith('dummy://')):
+        print(f"🎤 [VideoMux] Adding full narration track to final video")
+        try:
+            resolved_narration = os.path.abspath(full_narration_path)
+            if not os.path.exists(resolved_narration):
+                print(f"⚠️ [VideoMux] Full narration file not found at: {resolved_narration}")
+                full_narration = None
+            else:
+                full_narration = AudioFileClip(resolved_narration)
+        except Exception as e:
+            print(f"⚠️ [VideoMux] Failed to load full narration {full_narration_path}: {str(e)}")
+            full_narration = None
+    else:
+        full_narration = None
+
+    if full_narration:
+        try:
+            if full_narration.duration > final_video.duration:
+                full_narration = full_narration.subclipped(0, final_video.duration)
+            elif full_narration.duration < final_video.duration:
+                try:
+                    fps = getattr(full_narration, 'fps', 44100)
+                    narration_arr = full_narration.to_soundarray(fps=fps)
+                    channels = narration_arr.shape[1] if narration_arr.ndim == 2 else 1
+                except Exception:
+                    fps, channels = 44100, 2
+                    narration_arr = full_narration.to_soundarray(fps=fps)
+                remaining = max(0.0, float(final_video.duration) - float(full_narration.duration))
+                silence_samples = int(remaining * fps)
+                silence_arr = np.zeros((silence_samples, channels), dtype=np.float32)
+                padded_arr = np.concatenate([narration_arr, silence_arr], axis=0)
+                full_narration = AudioArrayClip(padded_arr, fps=fps).with_duration(final_video.duration)
+
+            narration_norm = _normalize_audio_clip(full_narration, target_rms=0.12) if normalize else full_narration
+            narration_scaled = _scale_audio_clip(narration_norm, float(narration_volume)).with_start(0)
+
+            if final_video.audio:
+                mixed_audio = CompositeAudioClip([final_video.audio, narration_scaled])
+                final_video = final_video.with_audio(mixed_audio)
+                opened_audios.append(mixed_audio)
+            else:
+                final_video = final_video.with_audio(narration_scaled)
+
+            opened_audios.extend([full_narration, narration_norm, narration_scaled])
+        except Exception as e:
+            print(f"⚠️ [VideoMux] Failed to mix full narration track: {str(e)}")
     
     # Add BGM to the final concatenated video (defer close until after write)
     if bgm_path and not (isinstance(bgm_path, str) and bgm_path.startswith('dummy://')):

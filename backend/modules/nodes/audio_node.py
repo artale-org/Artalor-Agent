@@ -32,6 +32,9 @@ class VoiceoverNode(GenModelNode):
         if voice:
             self.voice = voice
 
+    def get_category(self) -> str:
+        return "tts"
+
     def run(self, inputs: dict):
         # Extract monologue text from various possible keys
         voice_text = (inputs.get('ad_monologue_text') or 
@@ -63,12 +66,14 @@ class VoiceoverNode(GenModelNode):
             print(f"🎤 [VoiceoverNode] Text: {voice_text[:100]}...")
             
             # Extract voice if provided in params
-            voice = model_params.get('voice', self.voice)
+            voice = model_params.get('voice') or model_params.get('voice_id') or self.voice
+            speed = model_params.get('speed')
             
             # Save config BEFORE generation so it exists even if generation fails
             metadata_to_save = {
                 'model': current_model,
                 'voice': voice,
+                'speed': speed,
                 'text': voice_text.strip(),
                 **model_params
             }
@@ -78,7 +83,8 @@ class VoiceoverNode(GenModelNode):
                 text=voice_text.strip(),
                 voice=voice,
                 model=current_model,
-                output_dir=self.output_dir
+                output_dir=self.output_dir,
+                speed=speed
             )
             
             # Rename to consistent filename for caching
@@ -86,15 +92,7 @@ class VoiceoverNode(GenModelNode):
                 os.rename(result_path, voiceover_path)
                 
                 print(f"✅ [VoiceoverNode] Voiceover generated: {voiceover_path}")
-                
-                # VoiceoverNode typically generates a single file (not segmented per sub_video)
-                # But DVM structure has voiceover under sub_video_{i}.
-                # VoiceoverNode is usually for the whole ad if not segmented?
-                # Or maybe it's not used in the main segmented workflow?
-                # The segmented workflow uses SegmentedVoiceoverNode.
-                # If this node is used, we might want to store it under a global key if DVM supported it?
-                # DVM has 'bgm', 'final_video'. Maybe add 'voiceover_full'?
-                # For now, skipping DVM update for full VoiceoverNode unless we add a key.
+                self.update_data_version(['voiceover'], voiceover_path)
                 
                 return {'voiceover_path': voiceover_path}
             else:
@@ -125,6 +123,9 @@ class BGMNode(GenModelNode):
             self.default_model = default_model
         if default_duration:
             self.default_duration = default_duration
+
+    def get_category(self) -> str:
+        return "bgm"
 
     def run(self, inputs: dict):
         # Build BGM prompt from mood and style
@@ -243,6 +244,8 @@ class VideoEditNode(ToolNode):
             segmented_voiceover_paths = inputs['segmented_voiceover_generation'].get('segmented_voiceover_paths', [])
         elif 'segmented_voiceover_paths' in inputs:
             segmented_voiceover_paths = inputs['segmented_voiceover_paths']
+
+        voiceover_path = inputs.get('voiceover_path')
         
         # Get BGM path from various possible sources  
         bgm_path = None
@@ -259,6 +262,7 @@ class VideoEditNode(ToolNode):
         
         print(f"✂️ [VideoEditNode] Processing {len(videos)} video segments")
         print(f"✂️ [VideoEditNode] Segmented voiceovers: {len(segmented_voiceover_paths)} segments")
+        print(f"✂️ [VideoEditNode] Full voiceover: {voiceover_path}")
         print(f"✂️ [VideoEditNode] BGM: {bgm_path}")
         
         # Generate output path for the final concatenated video
@@ -288,6 +292,7 @@ class VideoEditNode(ToolNode):
             final_path = mux_video_with_audio_segments(
                 video_paths=videos,
                 narration_paths=segmented_voiceover_paths,
+                full_narration_path=voiceover_path,
                 bgm_path=bgm_path,
                 output_path=output_path,
                 **volumes_param,
@@ -306,6 +311,7 @@ class VideoEditNode(ToolNode):
                 'normalize': self.normalize,
                 'fade_duration': self.fade_duration,
                 'bgm_path': bgm_path,
+                'voiceover_path': voiceover_path,
                 'segments_count': len(segmented_voiceover_paths),
                 'videos_count': len(videos)
             }
@@ -331,6 +337,7 @@ class VideoEditNode(ToolNode):
             'generated_videos': {'type': 'list[string]', 'required': True, 'description': 'Generated video file path list'},
             'segmented_voiceover_paths': {'type': 'list[string]', 'required': False, 'description': 'Segmented voiceover audio path list'},
             'segmented_voiceover_generation': {'type': 'dict', 'required': False, 'description': 'Segmented voiceover generation result (alternative to segmented_voiceover_paths)'},
+            'voiceover_path': {'type': 'string', 'required': False, 'description': 'Single full-track voiceover path'},
             'bgm_path': {'type': 'string', 'required': False, 'description': 'Background music file path'},
             'bgm_generation': {'type': 'dict', 'required': False, 'description': 'BGM generation result (alternative to bgm_path)'}
         }
@@ -380,6 +387,9 @@ class SegmentedVoiceoverNode(GenModelNode):
             self.default_model = default_model
         if voice:
             self.voice = voice
+
+    def get_category(self) -> str:
+        return "tts"
 
     def run(self, inputs: dict):
         """

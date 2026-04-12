@@ -279,6 +279,8 @@ class VideoNode(GenModelNode):
             
             # Use the effective model for key conversion if available in params
             current_model = model_params.get('model', self.default_model)
+            model_config = self.config_manager.get_model_config(self.get_category(), current_model) if self.config_manager else {}
+            allowed_keys = set((model_config.get('input_keys') or {}).keys()) | set((model_config.get('parameters') or {}).keys())
             
             # Convert unified keys to model-specific format
             converted_inputs = api_inputs
@@ -297,6 +299,8 @@ class VideoNode(GenModelNode):
                     filtered_model_params[k] = v
             
             api_kwargs = {**filtered_model_params, **converted_inputs}
+            if allowed_keys:
+                api_kwargs = {k: v for k, v in api_kwargs.items() if k in allowed_keys or k == 'prompt'}
             
             # Extract prompt for function parameter
             prompt = api_kwargs.pop('prompt', filter_description(enhanced_video_desc))

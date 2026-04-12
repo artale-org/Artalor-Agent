@@ -45,6 +45,7 @@ SPECIFIED_MODELS: Dict[str, List[str]] = {
     "video": [
         "google/veo-3.1",
         "google/veo-3.1-fast",
+        "bytedance/seedance-2.0",
         "wan-video/wan-2.6-i2v",
         "openai/sora-2",
         "lucataco/wan-2.2-first-last-frame",

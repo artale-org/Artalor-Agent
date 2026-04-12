@@ -14,10 +14,20 @@
       "duration": 8
     }
   },
+  "tts": {
+    "model": "minimax/speech-02-hd",
+    "parameters": {
+      "voice_id": "Wise_Woman",
+      "speed": 1,
+      "volume": 1,
+      "language_boost": "English"
+    }
+  },
   "video_editor": {
     "tool": "VideoEditNode",
     "parameters": {
       "video_volume": 1.0,
+      "narration_volume": 0.7,
       "normalize": true,
       "fade_duration": 0.5
     }

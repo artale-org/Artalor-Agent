@@ -76,18 +76,21 @@ from modules.utils.data_version_manager import DataVersionManager
 infra_base = __import__('modules.nodes.base_node', fromlist=['BaseNode'])
 infra_image = __import__('modules.nodes.image_node', fromlist=['ImageNode'])
 infra_video = __import__('modules.nodes.video_node', fromlist=['VideoNode'])
-infra_audio = __import__('modules.nodes.audio_node', fromlist=['VideoEditNode'])
+infra_audio = __import__('modules.nodes.audio_node', fromlist=['VoiceoverNode', 'VideoEditNode'])
 BaseNode = infra_base.BaseNode
 ImageNode = infra_image.ImageNode
 VideoNode = infra_video.VideoNode
+VoiceoverNode = infra_audio.VoiceoverNode
 VideoEditNode = infra_audio.VideoEditNode
 
 # Import business layer
 biz_story = __import__('domain_components.analysis.story_analyzer', fromlist=['StoryAnalyzer'])
 biz_storyboard = __import__('domain_components.generation.storyboard_designer', fromlist=['StoryboardDesigner'])
+biz_story_monologue = __import__('domain_components.generation.story_monologue_designer', fromlist=['StoryMonologueDesigner'])
 
 StoryAnalyzer = biz_story.StoryAnalyzer
 StoryboardDesigner = biz_storyboard.StoryboardDesigner
+StoryMonologueDesigner = biz_story_monologue.StoryMonologueDesigner
 
 
 # Reducer function: replace old value with new value
@@ -101,7 +104,7 @@ class WorkflowState(TypedDict, total=False):
     """State schema for story video creation workflow
     
     NOTE: Keys that match node names are NOT defined here (LangGraph handles them automatically).
-    Node names are: story_analysis, character_generation, storyboard_design, image_generation, video_generation, video_editing
+    Node names are: story_analysis, character_generation, storyboard_design, image_generation, video_generation, story_tts, video_editing
     
     All intermediate fields must be defined here for LangGraph to merge them into state.
     """
@@ -129,6 +132,11 @@ class WorkflowState(TypedDict, total=False):
     
     generated_images: Annotated[list, replace_value]
     generated_videos: Annotated[list, replace_value]
+    monologue_text: Annotated[str, replace_value]
+    voice_style: Annotated[str, replace_value]
+    pacing: Annotated[str, replace_value]
+    language: Annotated[str, replace_value]
+    voiceover_path: Annotated[str, replace_value]
     final_video: Annotated[str, replace_value]  # Final edited video path
     
     # Control flow state
@@ -174,9 +182,21 @@ class VideoGenerationInput(BaseModel):
     storyboard: Optional[List] = Field(None, description="Storyboard")
     storyboard_frames: Optional[List] = Field(None, description="Storyboard frame list")
 
+class StoryTTSInput(BaseModel):
+    """Input for story TTS node"""
+    story: str = Field(description="Story content")
+    theme: Optional[str] = Field(None, description="Story theme")
+    mood: Optional[str] = Field(None, description="Story mood")
+    protagonist: Optional[str] = Field(None, description="Story protagonist")
+    setting: Optional[str] = Field(None, description="Story setting")
+    scene_descriptions: Optional[List] = Field(None, description="Scene descriptions from story analysis")
+    storyboard: Optional[List] = Field(None, description="Storyboard frames")
+    target_duration: Optional[int] = Field(None, description="Target video duration")
+
 class VideoEditInput(BaseModel):
     """Input for video edit node"""
     generated_videos: List = Field(description="Generated video list")
+    voiceover_path: Optional[str] = Field(None, description="Full voiceover path")
 
 # Node input model mapping
 NODE_INPUT_MODELS = {
@@ -185,6 +205,7 @@ NODE_INPUT_MODELS = {
     'storyboard_design': StoryboardDesignInput,
     'image_generation': ImageGenerationInput,
     'video_generation': VideoGenerationInput,
+    'story_tts': StoryTTSInput,
     'video_editing': VideoEditInput,
 }
 
@@ -375,12 +396,15 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
     storyboard_designer = StoryboardDesigner.create_node('storyboard_design', task_path)
     image_generator = ImageNode('image_generation', task_path)
     video_generator = VideoNode('video_generation', task_path)
+    story_monologue_designer = StoryMonologueDesigner.create_node('story_tts_text', task_path)
+    voiceover_generator = VoiceoverNode('tts', task_path)
     video_editor = VideoEditNode('video_editing', task_path)
     
     # Set config_manager for GenModelNodes
     character_generator.set_config_manager(config_manager)
     image_generator.set_config_manager(config_manager)
     video_generator.set_config_manager(config_manager)
+    voiceover_generator.set_config_manager(config_manager)
     # Note: VideoEditNode doesn't need config_manager (it's a tool node, not a model node)
     
     # Register node instances
@@ -390,6 +414,7 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
         'storyboard_design': storyboard_designer,
         'image_generation': image_generator,
         'video_generation': video_generator,
+        'story_tts': voiceover_generator,
         'video_editing': video_editor,
     }
 
@@ -397,12 +422,14 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
     workflow_config = config_manager.workflow_config
     image_gen_config = workflow_config.get('image_generation', {})
     video_gen_config = workflow_config.get('video_generation', {})
+    tts_config = workflow_config.get('tts', {})
     
     # Configure all image/video generators with their models
     character_generator.configure(default_model=image_gen_config.get('model', 'bytedance/seedream-4.5'))
     image_generator.configure(default_model=image_gen_config.get('model', 'bytedance/seedream-4.5'))
     # video_generator.configure(default_model=video_gen_config.get('model', 'lucataco/wan-2.2-first-last-frame:003fd8a38ff17cb6022c3117bb90f7403cb632062ba2b098710738d116847d57'))
     video_generator.configure(default_model=video_gen_config.get('model', 'google/veo-3.1-fast'))
+    voiceover_generator.configure(default_model=tts_config.get('model', 'minimax/speech-02-hd'), voice=tts_config.get('parameters', {}).get('voice_id'))
 
     # Node wrappers for LangGraph
     def node_story_analysis(state: dict, force_execute=False, create_new_version=False) -> dict:
@@ -523,8 +550,8 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
             if sb:
                 try:
                     dvm = DataVersionManager(task_path)
-                    dvm.initialize_from_storyboard(sb, global_assets=['final_video'], segment_assets=['image_first', 'image_last', 'video'])
-                    print(f"📦 Initialized data versioning for {len(sb)} segments (no BGM, no voiceover)")
+                    dvm.initialize_from_storyboard(sb, global_assets=['voiceover', 'final_video'], segment_assets=['image_first', 'image_last', 'video'])
+                    print(f"📦 Initialized data versioning for {len(sb)} segments with global voiceover support")
                 except Exception as e:
                     print(f"⚠️ Failed to initialize data versioning: {e}")
         
@@ -643,6 +670,26 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
             return result['video_generation']
         return result
 
+    def node_story_tts(state: dict, force_execute=False, create_new_version=False) -> dict:
+        state_with_options = {**state, '_force_execute': force_execute, '_create_new_version': create_new_version}
+
+        monologue_result = story_monologue_designer(state_with_options)
+        updates = monologue_result.get('story_tts_text', monologue_result) if isinstance(monologue_result, dict) else {}
+
+        tts_inputs = state_with_options.copy()
+        tts_inputs.update(updates)
+        tts_overrides = dict(tts_config.get('parameters', {}))
+        if tts_overrides:
+            tts_inputs['tts'] = tts_overrides
+
+        tts_result = voiceover_generator(tts_inputs)
+        if 'tts' in tts_result:
+            updates.update(tts_result['tts'])
+        else:
+            updates.update(tts_result)
+
+        return updates
+
     def node_edit(state: dict, force_execute=False, create_new_version=False) -> dict:
         state_with_options = {**state, '_force_execute': force_execute, '_create_new_version': create_new_version}
         
@@ -674,6 +721,11 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
             if valid_vids:
                 state_with_options['generated_videos'] = valid_vids
                 print(f"📦 Loaded {len(valid_vids)} videos from version manager")
+
+            voiceover_path = dvm.get_current_version(['voiceover'])
+            if voiceover_path and isinstance(voiceover_path, str) and os.path.exists(voiceover_path):
+                state_with_options['voiceover_path'] = voiceover_path
+                print(f"📦 Loaded full voiceover from version manager: {voiceover_path}")
                     
         except Exception as e:
             print(f"⚠️ Failed to load videos from version manager: {e}")
@@ -696,6 +748,7 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
     graph_builder.add_node('storyboard_design', wrap_node_with_dirty_check(node_storyboard_design, 'storyboard_design', storyboard_designer))
     graph_builder.add_node('image_generation', wrap_node_with_dirty_check(node_image_generation, 'image_generation', image_generator))
     graph_builder.add_node('video_generation', wrap_node_with_dirty_check(node_video_generation, 'video_generation', video_generator))
+    graph_builder.add_node('story_tts', wrap_node_with_dirty_check(node_story_tts, 'story_tts', voiceover_generator))
     graph_builder.add_node('video_editing', wrap_node_with_dirty_check(node_edit, 'video_editing', video_editor))
     
     # Add edges (linear workflow)
@@ -704,7 +757,8 @@ def build_app(task_path: str = None, compile_graph: bool = True, workflow_config
     graph_builder.add_edge('character_generation', 'storyboard_design')
     graph_builder.add_edge('storyboard_design', 'image_generation')
     graph_builder.add_edge('image_generation', 'video_generation')
-    graph_builder.add_edge('video_generation', 'video_editing')
+    graph_builder.add_edge('video_generation', 'story_tts')
+    graph_builder.add_edge('story_tts', 'video_editing')
     graph_builder.add_edge('video_editing', END)
     
     if not compile_graph:
